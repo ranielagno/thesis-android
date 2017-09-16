@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="raniel.earthquakesearchdrone.MapFragment">
+    <fragment xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools"
+        android:id="@+id/mapFragment"
+        android:name="com.google.android.gms.maps.SupportMapFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_horizontal"
+        android:layout_alignParentBottom="true"
+        android:layout_alignParentEnd="true"
+        android:layout_marginBottom="21dp"
+        android:id="@+id/linearLayout2"
+        android:visibility="visible">
+
+        <android.support.design.widget.FloatingActionButton
+            android:id="@+id/setRoute"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="10dp"
+            android:clickable="true"
+            app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+            app:fabSize="normal"
+            app:srcCompat="@android:drawable/ic_dialog_map"
+           />
+
+        <android.support.design.widget.FloatingActionButton
+            android:id="@+id/rtl"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="10dp"
+            android:clickable="true"
+            app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+            app:fabSize="normal"
+            app:srcCompat="@android:drawable/ic_menu_revert"
+            />
+
+        <android.support.design.widget.FloatingActionButton
+            android:id="@+id/takeoff"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="10dp"
+            android:clickable="true"
+            app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+            app:fabSize="normal"
+            app:srcCompat="@android:drawable/stat_sys_upload_done"
+           />
+
+        <android.support.design.widget.FloatingActionButton
+            android:id="@+id/settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="10dp"
+            android:clickable="true"
+            app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+            app:fabSize="normal"
+            app:srcCompat="@android:drawable/ic_menu_manage" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_horizontal"
+        android:visibility="visible"
+        android:layout_alignTop="@+id/linearLayout2"
+        android:layout_alignParentStart="true">
+
+        <android.support.design.widget.FloatingActionButton
+            android:id="@+id/send"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="10dp"
+            android:layout_marginEnd="15dp"
+            android:clickable="true"
+            android:visibility="invisible"
+            app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+            app:fabSize="normal"
+            app:srcCompat="@android:drawable/ic_menu_send" />
+
+        <RelativeLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal">
+
+            <android.support.design.widget.FloatingActionButton
+                android:id="@+id/clear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="10dp"
+                android:clickable="true"
+                android:visibility="invisible"
+                app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+                app:fabSize="normal"
+                app:srcCompat="@drawable/places_ic_clear"
+                />
+
+            <android.support.design.widget.FloatingActionButton
+                android:id="@+id/land"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="10dp"
+                android:clickable="true"
+                app:backgroundTint="@color/cast_libraries_material_featurehighlight_outer_highlight_default_color"
+                app:fabSize="normal"
+                android:visibility="invisible"
+                app:srcCompat="@android:drawable/stat_sys_download_done"
+                android:layout_alignTop="@+id/clear"/>
+        </RelativeLayout>
+
+    </LinearLayout>
+
+
+</RelativeLayout>
