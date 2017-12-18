@@ -37,10 +37,15 @@ public class ViewListActivity extends AppCompatActivity {
     private boolean mTwoPane;
 
     @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(newBase);
+        MultiDex.install(this);
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_view_list);
-        MultiDex.install(this);
         View recyclerView = findViewById(R.id.view_list);
         assert recyclerView != null;
         setupRecyclerView((RecyclerView) recyclerView);

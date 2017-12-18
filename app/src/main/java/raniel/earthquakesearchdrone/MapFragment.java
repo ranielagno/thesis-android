@@ -59,6 +59,7 @@ import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 
+import io.socket.client.Ack;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
@@ -94,7 +95,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
 
     ProgressDialog initialDialog;
     Socket socket;
-    String server = "http://192.168.0.11:5000/drone";
+    String server = "http://earthquakesearchdrone.herokuapp.com/drone";
 
     Marker droneMark;
 
@@ -196,12 +197,15 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
             socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
                 @Override
                 public void call(Object... args) {
-
+                    Log.d("Drone", "Connected");
                 }
             }).on("paramaters", new Emitter.Listener() {
                 @Override
                 public void call(final Object... args) {
                     Log.d("Drone", args[0].toString());
+                    if(initialDialog.isShowing())
+                        initialDialog.dismiss();
+
                     getActivity().runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
@@ -211,13 +215,22 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                     });
                 }
             });
+            socket.connect();
+            initialDialog.show();
+            socket.emit("setup", "Setup", new Ack() {
+                @Override
+                public void call(Object... args) {
+                    Log.d("Drone", "Setup command sent");
+                }
+            });
+
         } catch (URISyntaxException e) {
             e.printStackTrace();
         }
+        /*
         MapTask task = new MapTask();
         task.execute("getDroneParams");
-
-
+        */
     }
 
     private void getDeviceLocation() {
@@ -338,8 +351,11 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
             latlongalt = reader.getJSONObject("gps_location");
             battery = reader.getJSONObject("battery");
             droneLocation = new LatLng(
-                    latlongalt.getDouble("latitude"),
-                    latlongalt.getDouble("longitude"));
+                    14.605160,
+                    121.002181
+                    //latlongalt.getDouble("latitude"),
+                    //latlongalt.getDouble("longitude")
+                    );
             setDroneParams(
                     droneLocation,
                     (float)latlongalt.getDouble("altitude"),
@@ -360,7 +376,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
     }
 
     private void setDroneParams(LatLng latLng, float altitude, float rotation,
-                                double current, double voltage, double level, String modeString,
+                                double voltage, double current, double level, String modeString,
                                 boolean is_armed, String system_status){
 
         if(droneMark == null) {
@@ -368,13 +384,15 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                     .icon(BitmapDescriptorFactory.fromResource(R.drawable.red_arrow))
                     .position(latLng)
                     .flat(true)
-                    .rotation(rotation));
+                    .rotation(rotation)
+                    .anchor(0.5f, 0.5f));
         }else{
             droneMark.setPosition(latLng);
             droneMark.setRotation(rotation);
         }
         if(txtLat != null && txtLng != null && txtAlt != null && txtVolts != null && txtCur != null
                 && txtLevel != null && mode != null && armed != null && status != null){
+
             txtLat.setText("LAT: "+latLng.latitude);
             txtLng.setText("LNG: "+latLng.longitude);
             txtAlt.setText("ALT: "+altitude);
@@ -427,29 +445,73 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
     }
 
     public void returnToLand(View view){
+        //socket.emit("rtl", "RTL");
+
         task = new MapTask();
         task.execute("rtl");
+
     }
 
     public void landNow(View view){
+        //socket.emit("land", "Land");
+
         task = new MapTask();
         task.execute("land");
+
     }
 
     public void throttle(View view) {
+        /*
         task = new MapTask();
         task.execute("takeoff");
+        */
+
+        String json = "";
+        JSONObject jsonObject = new JSONObject();
+        try {
+            jsonObject.accumulate("altitude", droneAltitude);
+            jsonObject.accumulate("airspeed", droneAirspeed);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        json = jsonObject.toString();
+        socket.emit("takeoff", json);
+
     }
 
     public void sendRoute(View view){
         task = new MapTask();
         task.execute("sendRoute");
+        /*
+        String json = "";
+        JSONObject jsonObject = new JSONObject();
+        JSONArray jsonArrayLatLong = new JSONArray();
+
+        try {
+            for (int i = 1; i < point.size()-1; i++) {
+                JSONObject jsonLatLong = new JSONObject();
+                jsonLatLong.accumulate("latitude", point.get(i).latitude);
+                jsonLatLong.accumulate("longitude", point.get(i).longitude);
+                jsonArrayLatLong.put(jsonLatLong);
+            }
+            jsonObject.accumulate("points", jsonArrayLatLong);
+            jsonObject.accumulate("altitude", droneAltitude);
+            jsonObject.accumulate("airspeed", droneAirspeed);
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        json = jsonObject.toString();
+        socket.emit("route", json);
+        */
+
         send.setVisibility(View.INVISIBLE);
         clear.setVisibility(View.INVISIBLE);
         set.setVisibility(View.VISIBLE);
         rtl.setVisibility(View.VISIBLE);
         land.setVisibility(View.VISIBLE);
         takeoff.setVisibility(View.VISIBLE);
+        settings.setVisibility(View.VISIBLE);
 
         mMap.setOnMapClickListener(null);
     }
@@ -637,6 +699,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                     bufferedReader.close();
                     inputStream.close();
                     httpURLConnection.disconnect();
+
                     //Log.d("Drone",result);
                 } catch (JSONException e) {
                     e.printStackTrace();
@@ -648,7 +711,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
 
                 try {
 
-                    publishProgress();
+                    //publishProgress();
 
                     url = new URL(server+"/params");
                     HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
