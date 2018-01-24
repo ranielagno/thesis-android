@@ -1,9 +1,7 @@
 package raniel.earthquakesearchdrone;
 
-import android.*;
 import android.Manifest;
 import android.app.AlertDialog;
-import android.app.Dialog;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -14,6 +12,7 @@ import android.location.Location;
 import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.design.widget.FloatingActionButton;
@@ -34,6 +33,7 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.places.Places;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.GoogleMapOptions;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
@@ -47,19 +47,20 @@ import com.google.android.gms.maps.model.PolylineOptions;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.w3c.dom.Text;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Timer;
+import java.util.TimerTask;
 
-import io.socket.client.Ack;
 import io.socket.client.IO;
 import io.socket.client.Socket;
 import io.socket.emitter.Emitter;
@@ -70,46 +71,42 @@ import static android.content.Context.LAYOUT_INFLATER_SERVICE;
  * Created by Raniel on 5/19/2017.
  */
 
-public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, View.OnClickListener{
+public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener, View.OnClickListener {
 
-    private GoogleMap mMap;
-    private boolean mLocationPermissionGranted;
-    private static final int PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION = 1;
-    private Location mLastKnownLocation;
+    private static final int PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION = 1;
     private static final String TAG = "Drone";
     private static final int DEFAULT_ZOOM = 19;
-    private final LatLng mDefaultLocation = new LatLng(14.598918, 121.005397);
-    private CameraPosition mCameraPosition;
-    private GoogleApiClient mGoogleApiClient;
-
     private static int victim_number = 0;
     private static int point_number = 0;
-    private LatLng startingPoint;
-    private static ArrayList<LatLng> point;
-    ArrayList<Polyline> polylines = new ArrayList<Polyline>();
+    private static ArrayList<LatLng> point = new ArrayList<>();
+    //private final LatLng mDefaultLocation = new LatLng(14.598918, 121.005397);
+    private final LatLng mDefaultLocation = new LatLng(14.598228, 121.011736);
+    ArrayList<Polyline> polylines = new ArrayList<>();
     MapTask task;
     FloatingActionButton send, set, takeoff, rtl, land, clear, settings;
-
     int droneAltitude = 0;
     int droneAirspeed = 0;
-
     ProgressDialog initialDialog;
     Socket socket;
-    String server = "http://earthquakesearchdrone.herokuapp.com/drone";
-
+    //String server = "https://doddering-piranha-0610.dataplicity.io/drone";
+    //String server = "http://192.168.0.11:5000/drone";
+    String server = "http://192.168.8.102:5000/drone";
     Marker droneMark;
+    TextView txtLat, txtLng, txtAlt, txtVolts, txtCur, txtLevel, mode, armed, status;
+    LatLng droneLocation;
+    AlertDialog settingsDialog;
+    private GoogleMap mMap;
+    private boolean mLocationPermissionGranted;
+    private Location mLastKnownLocation;
+    private CameraPosition mCameraPosition;
+    private GoogleApiClient mGoogleApiClient;
+    private SupportMapFragment mapFragment;
+    private String system_status = "";
 
-    static TextView txtLat, txtLng, txtAlt, txtVolts, txtCur, txtLevel, mode, armed, status;
-
-    static LatLng droneLocation;
-
-    @Nullable
     @Override
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
 
         View view = inflater.inflate(R.layout.fragment_map, container, false);
-
-        point = new ArrayList<>();
 
         LocationManager locationManager = (LocationManager) getActivity().getSystemService(Context.LOCATION_SERVICE);
 
@@ -130,6 +127,8 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         land = (FloatingActionButton) view.findViewById(R.id.land);
         settings = (FloatingActionButton) view.findViewById(R.id.settings);
 
+        createSettingsModal();
+
         send.setOnClickListener(this);
         clear.setOnClickListener(this);
         set.setOnClickListener(this);
@@ -137,10 +136,6 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         land.setOnClickListener(this);
         takeoff.setOnClickListener(this);
         settings.setOnClickListener(this);
-
-        initialDialog = new ProgressDialog(getContext());
-        initialDialog.setMessage("Waiting for vehicle to initialise. Please wait...");
-        initialDialog.setCanceledOnTouchOutside(false);
 
         mGoogleApiClient = new GoogleApiClient.Builder(getContext())
                 .enableAutoManage(getActivity() /* FragmentActivity */,
@@ -152,16 +147,23 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                 .build();
         mGoogleApiClient.connect();
 
+        try {
+            socket = IO.socket(server);
+            setupDrone();
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
+        }
+
         return view;
     }
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
 
-        try{
-            SupportMapFragment mapFragment = (SupportMapFragment) getChildFragmentManager().findFragmentById(R.id.mapFragment);
+        try {
+            mapFragment = (SupportMapFragment) getChildFragmentManager().findFragmentById(R.id.mapFragment);
             mapFragment.getMapAsync(MapFragment.this);
-         }catch (Exception e){
+        } catch (Exception e) {
             e.printStackTrace();
         }
 
@@ -192,45 +194,15 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         //getDroneLocation();
         mMap.setOnMapClickListener(null);
 
-        try {
-            socket = IO.socket(server);
-            socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
-                @Override
-                public void call(Object... args) {
-                    Log.d("Drone", "Connected");
-                }
-            }).on("paramaters", new Emitter.Listener() {
-                @Override
-                public void call(final Object... args) {
-                    Log.d("Drone", args[0].toString());
-                    if(initialDialog.isShowing())
-                        initialDialog.dismiss();
+        droneMark = mMap.addMarker(new MarkerOptions()
+                .icon(BitmapDescriptorFactory.fromResource(R.drawable.red_arrow))
+                //.icon(mMap.)
+                .flat(true)
+                .anchor(0.5f, 0.5f)
+                .zIndex(1.0f)
+                .position(mDefaultLocation));
 
-                    getActivity().runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            if(!args[0].toString().equals("parameters"))
-                                decodeJSON(args[0].toString());
-                        }
-                    });
-                }
-            });
-            socket.connect();
-            initialDialog.show();
-            socket.emit("setup", "Setup", new Ack() {
-                @Override
-                public void call(Object... args) {
-                    Log.d("Drone", "Setup command sent");
-                }
-            });
 
-        } catch (URISyntaxException e) {
-            e.printStackTrace();
-        }
-        /*
-        MapTask task = new MapTask();
-        task.execute("getDroneParams");
-        */
     }
 
     private void getDeviceLocation() {
@@ -243,17 +215,12 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
 
         if (mLocationPermissionGranted) {
             if (ActivityCompat.checkSelfPermission(getContext(),
-                    Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                     && ActivityCompat.checkSelfPermission(getContext(),
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return;
+                    Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+                ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+                //return;
             }
 
 
@@ -283,7 +250,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                                            @NonNull int[] grantResults) {
         mLocationPermissionGranted = false;
         switch (requestCode) {
-            case PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION: {
+            case PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION: {
                 // If request is cancelled, the result arrays are empty.
                 if (grantResults.length > 0
                         && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -293,6 +260,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         }
         updateLocationUI();
     }
+
     /**
      * Updates the map's UI settings based on whether the user has granted location permission.
      */
@@ -307,13 +275,13 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
          * onRequestPermissionsResult.
          */
         if (ContextCompat.checkSelfPermission(getContext(),
-                Manifest.permission.ACCESS_COARSE_LOCATION)
+                Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
             mLocationPermissionGranted = true;
         } else {
             ActivityCompat.requestPermissions(getActivity(),
-                    new String[]{android.Manifest.permission.ACCESS_COARSE_LOCATION},
-                    PERMISSIONS_REQUEST_ACCESS_COARSE_LOCATION);
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    PERMISSIONS_REQUEST_ACCESS_FINE_LOCATION);
         }
 
         if (mLocationPermissionGranted) {
@@ -344,69 +312,149 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         alert.show();
     }
 
-    private void decodeJSON(String json){
+    public void setupDrone() {
+        initialDialog = new ProgressDialog(getContext());
+        initialDialog.setMessage("Waiting for vehicle to initialise. Please wait...");
+        initialDialog.setCanceledOnTouchOutside(false);
+        initialDialog.show();
+
+        task = new MapTask(this);
+        task.execute("getDroneParams");
+
+    }
+
+    public void setupSocketListeners() {
+
+        Log.d("Drone", "setupSocketListeners");
+
+        socket.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                Log.d("Drone", "Connected");
+            }
+        }).on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                Log.d("Drone", "Disconnected");
+            }
+        }).on("parameters", new Emitter.Listener() {
+            @Override
+            public void call(final Object... args) {
+                Log.d("Drone", "Received message");
+
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        decodeJSON(args[0].toString());
+                    }
+                });
+            }
+        }).on("gas_detected", new Emitter.Listener() {
+            @Override
+            public void call(final Object... args) {
+                Log.i("Drone", "Gas Detected!");
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        setGasDetectedLocation(args[0].toString());
+                    }
+                });
+
+            }
+        }).on("sound_detected", new Emitter.Listener() {
+            @Override
+            public void call(final Object... args) {
+                Log.i("Drone", "Gas Detected!");
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        setSoundDetectedLocation(args[0].toString());
+                    }
+                });
+            }
+        });
+
+    }
+
+    public void decodeJSON(String json) {
+
         JSONObject reader, latlongalt, battery;
+        LatLng droneLatLng;
+
         try {
             reader = new JSONObject(json);
             latlongalt = reader.getJSONObject("gps_location");
             battery = reader.getJSONObject("battery");
-            droneLocation = new LatLng(
-                    14.605160,
-                    121.002181
-                    //latlongalt.getDouble("latitude"),
-                    //latlongalt.getDouble("longitude")
-                    );
-            setDroneParams(
-                    droneLocation,
-                    (float)latlongalt.getDouble("altitude"),
-                    (float)reader.getDouble("heading"),
-                    battery.getDouble("voltage"),
-                    battery.getDouble("current"),
-                    battery.getDouble("level"),
-                    reader.getString("mode"),
-                    reader.getBoolean("armed"),
-                    reader.getString("system status")
-            );
 
+            droneMark.setRotation((float) reader.getDouble("heading"));
+            droneMark.setPosition(new LatLng(latlongalt.getDouble("latitude"), latlongalt.getDouble("longitude")));
 
-        } catch (JSONException e){
+            droneLatLng = new LatLng(latlongalt.getDouble("latitude"), latlongalt.getDouble("longitude"));
+
+            if (droneLocation == null)
+                droneLocation = droneLatLng;
+            else
+                droneMark.setPosition(droneLatLng);
+
+            txtLat.setText("LAT: " + droneLatLng.latitude);
+            txtLng.setText("LNG: " + droneLatLng.longitude);
+
+            system_status = reader.getString("system status");
+
+            txtAlt.setText("ALT: " + (float) latlongalt.getDouble("altitude"));
+            txtVolts.setText("Voltage: " + battery.getDouble("voltage") + "V");
+            txtCur.setText("Current: " + battery.getDouble("current") + "A");
+            txtLevel.setText("Level: " + battery.getDouble("level") + "%");
+            mode.setText("Mode: " + reader.getString("mode"));
+            armed.setText("Is armed?: " + reader.getBoolean("armed"));
+            status.setText("System Status: " + system_status);
+
+            if (system_status.equals("ACTIVE")) {
+                takeoff.setVisibility(View.INVISIBLE);
+                land.setVisibility(View.VISIBLE);
+                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(droneLatLng, DEFAULT_ZOOM));
+            }
+
+        } catch (JSONException e) {
             e.printStackTrace();
         }
 
     }
 
-    private void setDroneParams(LatLng latLng, float altitude, float rotation,
-                                double voltage, double current, double level, String modeString,
-                                boolean is_armed, String system_status){
 
-        if(droneMark == null) {
-            droneMark = mMap.addMarker(new MarkerOptions()
-                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.red_arrow))
-                    .position(latLng)
+    private void setGasDetectedLocation(String json) {
+        try {
+            JSONObject sensor_json = new JSONObject(json);
+            LatLng gas_detected_location = new LatLng(sensor_json.getDouble("latitude"),
+                    sensor_json.getDouble("longitude"));
+            mMap.addMarker(new MarkerOptions()
+                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.mask))
                     .flat(true)
-                    .rotation(rotation)
-                    .anchor(0.5f, 0.5f));
-        }else{
-            droneMark.setPosition(latLng);
-            droneMark.setRotation(rotation);
-        }
-        if(txtLat != null && txtLng != null && txtAlt != null && txtVolts != null && txtCur != null
-                && txtLevel != null && mode != null && armed != null && status != null){
-
-            txtLat.setText("LAT: "+latLng.latitude);
-            txtLng.setText("LNG: "+latLng.longitude);
-            txtAlt.setText("ALT: "+altitude);
-            txtVolts.setText("Voltage: "+voltage+"V");
-            txtCur.setText("Current: "+current+"A");
-            txtLevel.setText("Level: "+level+"%");
-            mode.setText("Mode: "+modeString);
-            armed.setText("Is armed?: "+is_armed);
-            status.setText("System Status: "+system_status);
+                    .anchor(0.5f, 0.5f)
+                    .position(gas_detected_location));
+        } catch (JSONException e) {
+            e.printStackTrace();
         }
 
     }
 
-    public void setRoute(View view){
+    private void setSoundDetectedLocation(String json) {
+        try {
+            JSONObject sensor_json = new JSONObject(json);
+            LatLng sound_detected_location = new LatLng(sensor_json.getDouble("latitude"),
+                    sensor_json.getDouble("longitude"));
+            mMap.addMarker(new MarkerOptions()
+                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.alert))
+                    .flat(true)
+                    .anchor(0.5f, 0.5f)
+                    .position(sound_detected_location));
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    public void setRoute(View view) {
 
         send.setVisibility(View.VISIBLE);
         clear.setVisibility(View.VISIBLE);
@@ -419,11 +467,12 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         mMap.setOnMapClickListener(new GoogleMap.OnMapClickListener() {
             @Override
             public void onMapClick(LatLng latLng) {
-                point.add(0,droneLocation);
-                point.add(point.size()-1,latLng);
+                point.add(0, droneLocation);
+                point.add(point.size() - 1, latLng);
                 mMap.addMarker(new MarkerOptions()
                         .position(latLng)
-                        .title("Point "+point.lastIndexOf(latLng)));
+                        .draggable(true)
+                        .title("Point " + point.lastIndexOf(latLng)));
                 getRoute();
 
             }
@@ -431,9 +480,9 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
 
     }
 
-    private void getRoute(){
+    private void getRoute() {
 
-        if(polylines.size() > 0){
+        if (polylines.size() > 0) {
             polylines.get(0).remove();
             polylines.clear();
         }
@@ -444,28 +493,32 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
 
     }
 
-    public void returnToLand(View view){
+    public void returnToLand(View view) {
         //socket.emit("rtl", "RTL");
 
-        task = new MapTask();
-        task.execute("rtl");
+        if (system_status.equals("ACTIVE")) {
+            task = new MapTask(this);
+            task.execute("rtl");
+        } else {
+            Toast.makeText(getContext(), "Error. Drone is not active", Toast.LENGTH_LONG).show();
+        }
 
     }
 
-    public void landNow(View view){
+    public void landNow(View view) {
         //socket.emit("land", "Land");
 
-        task = new MapTask();
+        task = new MapTask(this);
         task.execute("land");
 
     }
 
     public void throttle(View view) {
-        /*
-        task = new MapTask();
-        task.execute("takeoff");
-        */
 
+        task = new MapTask(this);
+        task.execute("takeoff");
+
+        /*
         String json = "";
         JSONObject jsonObject = new JSONObject();
         try {
@@ -476,11 +529,12 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         }
         json = jsonObject.toString();
         socket.emit("takeoff", json);
+        */
 
     }
 
-    public void sendRoute(View view){
-        task = new MapTask();
+    public void sendRoute(View view) {
+        task = new MapTask(this);
         task.execute("sendRoute");
         /*
         String json = "";
@@ -516,15 +570,15 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         mMap.setOnMapClickListener(null);
     }
 
-    public void clearRoute(View view){
+    public void clearRoute(View view) {
         polylines.clear();
         mMap.clear();
     }
 
-    private void setVictimPosition(double latitude, double longitude){
+    private void setVictimPosition(double latitude, double longitude) {
         LatLng pos = new LatLng(latitude, longitude);
         ++victim_number;
-        mMap.addMarker(new MarkerOptions().position(pos).title("Victim "+victim_number));
+        mMap.addMarker(new MarkerOptions().position(pos).title("Victim " + victim_number));
     }
 
     @Override
@@ -536,38 +590,32 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
     @Override
     public void onClick(View v) {
 
-         if(v.getId() == send.getId()){
-             sendRoute(v);
-         }else if(v.getId() == set.getId()){
-             setRoute(v);
-         }else if(v.getId() == clear.getId()){
-             clearRoute(v);
-         }else if(v.getId() == rtl.getId()){
-             returnToLand(v);
-         }else if(v.getId() == land.getId()){
-             landNow(v);
-             takeoff.setVisibility(View.VISIBLE);
-             land.setVisibility(View.INVISIBLE);
-         }else if(v.getId() == takeoff.getId()){
-             throttle(v);
-             takeoff.setVisibility(View.INVISIBLE);
-             land.setVisibility(View.VISIBLE);
-         }else {
-             showSettings(v);
-         }
+        if (v.getId() == send.getId()) {
+            sendRoute(v);
+        } else if (v.getId() == set.getId()) {
+            setRoute(v);
+        } else if (v.getId() == clear.getId()) {
+            clearRoute(v);
+        } else if (v.getId() == rtl.getId()) {
+            returnToLand(v);
+        } else if (v.getId() == land.getId()) {
+            landNow(v);
+            takeoff.setVisibility(View.VISIBLE);
+            land.setVisibility(View.INVISIBLE);
+        } else if (v.getId() == takeoff.getId()) {
+            throttle(v);
+            takeoff.setVisibility(View.INVISIBLE);
+            land.setVisibility(View.VISIBLE);
+        } else {
+            showSettings(v);
+        }
     }
 
-    public void showSettings(View v){
-        LayoutInflater inflater = (LayoutInflater)getContext().getSystemService(LAYOUT_INFLATER_SERVICE);
-        View layout = inflater.inflate(R.layout.settings_modal, (ViewGroup) v.findViewById(R.id.mapFragment));
+    private void createSettingsModal() {
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-        builder.setView(layout);
+        LayoutInflater inflater = (LayoutInflater) getContext().getSystemService(LAYOUT_INFLATER_SERVICE);
+        View layout = inflater.inflate(R.layout.settings_modal, null);
 
-        final TextView altitude = (TextView) layout.findViewById(R.id.altitude);
-        final TextView airspeed = (TextView) layout.findViewById(R.id.airspeed);
-        final SeekBar seekAltitude = (SeekBar) layout.findViewById(R.id.seekBar1);
-        final SeekBar seekAirspeed = (SeekBar) layout.findViewById(R.id.seekBar2);
         txtLat = (TextView) layout.findViewById(R.id.lat);
         txtLng = (TextView) layout.findViewById(R.id.lng);
         txtAlt = (TextView) layout.findViewById(R.id.alt);
@@ -577,15 +625,23 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         mode = (TextView) layout.findViewById(R.id.mode);
         armed = (TextView) layout.findViewById(R.id.armed);
         status = (TextView) layout.findViewById(R.id.status);
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+        builder.setView(layout);
+
+        final TextView altitude = (TextView) layout.findViewById(R.id.altitude);
+        final TextView airspeed = (TextView) layout.findViewById(R.id.airspeed);
+        final SeekBar seekAltitude = (SeekBar) layout.findViewById(R.id.seekBar1);
+        final SeekBar seekAirspeed = (SeekBar) layout.findViewById(R.id.seekBar2);
         seekAltitude.setProgress(droneAltitude);
         seekAirspeed.setProgress(droneAirspeed);
-        altitude.setText("Altitude: "+droneAltitude+" m");
-        airspeed.setText("Airspeed: "+droneAirspeed+" m/s");
+        altitude.setText("Set Altitude: " + droneAltitude + " m");
+        airspeed.setText("Airspeed: " + droneAirspeed + " m/s");
 
         seekAltitude.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser){
-                altitude.setText("Altitude: "+progress+" m");
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                altitude.setText("Altitude: " + progress + " m");
                 droneAltitude = progress;
             }
 
@@ -602,8 +658,8 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
 
         seekAirspeed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser){
-                airspeed.setText("Airspeed: "+progress+" m/s");
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                airspeed.setText("Airspeed: " + progress + " m/s");
                 droneAirspeed = progress;
             }
 
@@ -626,8 +682,20 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                 });
 
         builder.setTitle("Settings");
-        builder.create();
-        builder.show();
+
+        settingsDialog = builder.create();
+
+    }
+
+    public void showSettings(View v) {
+
+        /*
+        LayoutInflater inflater = (LayoutInflater)getContext().getSystemService(LAYOUT_INFLATER_SERVICE);
+        View layout = inflater.inflate(R.layout.settings_modal, (ViewGroup) v.findViewById(R.id.mapFragment));
+
+        */
+        settingsDialog.show();
+
     }
 
 
@@ -635,33 +703,85 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
     public void onDestroyView() {
         super.onDestroyView();
         socket.disconnect();
-        socket.close();
+        // socket.close();
     }
 
-    public class MapTask extends AsyncTask<String,Integer,String> {
+    public static class MapTask extends AsyncTask<String, Integer, String> {
 
-        String command = "";
+        private WeakReference<MapFragment> activityReference;
+        private String command = "";
+        private MapFragment activity;
 
+        public MapTask(MapFragment context) {
+
+            this.activityReference = new WeakReference<>(context);
+
+            // get a reference to the activity if it is still there
+            activity = activityReference.get();
+        }
 
         @Override
         protected String doInBackground(String... params) {
 
+            if (activity == null) return null;
+
             command = params[0];
+
             String json = "";
+            String server = activity.server;
+
             URL url = null;
             JSONObject jsonObject = new JSONObject();
 
-            if (params[0] != "getDroneParams"){
+            if (command.equals("getDroneParams")) {
+
                 try {
+
+                    url = new URL(server + "/params");
+                    HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+                    httpURLConnection.setRequestMethod("GET");
+                    int responseCode = httpURLConnection.getResponseCode();
+
+                    if (responseCode == HttpURLConnection.HTTP_OK) {
+                        BufferedReader in = new BufferedReader(new InputStreamReader(
+                                httpURLConnection.getInputStream()));
+                        String inputLine;
+                        StringBuffer response = new StringBuffer();
+
+                        while ((inputLine = in.readLine()) != null) {
+                            response.append(inputLine).append("\n");
+                        }
+                        in.close();
+
+                        return response.toString();
+                    } else {
+                        Log.d("Drone", "GET request not worked");
+                    }
+
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+            } else {
+
+                try {
+
+                    int droneAltitude = activity.droneAltitude;
+                    int droneAirspeed = activity.droneAirspeed;
 
                     if (command.equals("sendRoute")) {
                         JSONArray jsonArrayLatLong = new JSONArray();
-                        for (int i = 1; i < point.size()-1; i++) {
+                        for (int i = 1; i < point.size() - 1; i++) {
                             JSONObject jsonLatLong = new JSONObject();
                             jsonLatLong.accumulate("latitude", point.get(i).latitude);
                             jsonLatLong.accumulate("longitude", point.get(i).longitude);
                             jsonArrayLatLong.put(jsonLatLong);
                         }
+
+                        JSONObject jsonLatLong = new JSONObject();
+                        jsonLatLong.accumulate("latitude", point.get(0).latitude);
+                        jsonLatLong.accumulate("longitude", point.get(0).longitude);
+                        jsonArrayLatLong.put(jsonLatLong);
 
                         jsonObject.accumulate("points", jsonArrayLatLong);
                         jsonObject.accumulate("altitude", droneAltitude);
@@ -693,55 +813,19 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                     BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, "iso-8859-1"));
                     String result = "";
                     String line = "";
-                    while((line = bufferedReader.readLine()) != null){
+                    while ((line = bufferedReader.readLine()) != null) {
                         result += line;
                     }
                     bufferedReader.close();
                     inputStream.close();
                     httpURLConnection.disconnect();
 
-                    //Log.d("Drone",result);
                 } catch (JSONException e) {
                     e.printStackTrace();
 
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-            } else {
-
-                try {
-
-                    //publishProgress();
-
-                    url = new URL(server+"/params");
-                    HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
-                    httpURLConnection.setRequestMethod("GET");
-                    httpURLConnection.setRequestProperty("User-Agent", "Mozilla/5.0");
-                    int responseCode = httpURLConnection.getResponseCode();
-                    System.out.println("GET Response Code :: " + responseCode);
-
-                    if (responseCode == HttpURLConnection.HTTP_OK) {
-                        // success
-                        BufferedReader in = new BufferedReader(new InputStreamReader(
-                                httpURLConnection.getInputStream()));
-                        String inputLine;
-                        StringBuffer response = new StringBuffer();
-
-                        while ((inputLine = in.readLine()) != null) {
-                            response.append(inputLine);
-                        }
-                        in.close();
-
-                        // print result
-                        //Log.d("Drone", response.toString());
-                    } else {
-                        System.out.println("GET request not worked");
-                    }
-
-                } catch (IOException e){
-                    e.printStackTrace();
-                }
-
             }
             return json;
 
@@ -753,24 +837,40 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         }
 
         @Override
-        protected void onPostExecute(String s) {
+        protected void onPostExecute(final String s) {
             super.onPostExecute(s);
 
-            if(command.equals("getDroneParams")) {
-                initialDialog.dismiss();
-                socket.connect();
+            if (s == null || s.equals("Error!")) {
+                activity.initialDialog.setMessage("Cannot initialise the vehicle");
+                activity.initialDialog.setCanceledOnTouchOutside(true);
+                return;
             }
 
-            if(s.equals("Error!")){
-                initialDialog.setMessage("Cannot initialise the vehicle");
-                initialDialog.setCanceledOnTouchOutside(true);
+            if (command.equals("getDroneParams")) {
+
+                activity.initialDialog.dismiss();
+                activity.setupSocketListeners();
+                activity.socket.connect();
+
+                if (activity.droneMark == null) {
+                    Handler handler = new Handler();
+                    handler.postDelayed(new Runnable() {
+                        public void run() {
+                            activity.decodeJSON(s);
+                        }
+                    }, 2000);
+                    return;
+                }
+
+                activity.decodeJSON(s);
+
             }
         }
 
         @Override
         protected void onProgressUpdate(Integer... values) {
             super.onProgressUpdate(values);
-            initialDialog.show();
+            activity.initialDialog.show();
         }
 
     }
