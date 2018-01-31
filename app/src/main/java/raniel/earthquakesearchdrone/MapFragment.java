@@ -84,13 +84,10 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
     ArrayList<Polyline> polylines = new ArrayList<>();
     MapTask task;
     FloatingActionButton send, set, takeoff, rtl, land, clear, settings;
-    int droneAltitude = 0;
-    int droneAirspeed = 0;
+    int droneAltitude = 1;
+    double droneAirspeed = 1.0;
     ProgressDialog initialDialog;
     Socket socket;
-    //String server = "https://doddering-piranha-0610.dataplicity.io/drone";
-    //String server = "http://192.168.0.11:5000/drone";
-    String server = "http://192.168.8.102:5000/drone";
     Marker droneMark;
     TextView txtLat, txtLng, txtAlt, txtVolts, txtCur, txtLevel, mode, armed, status;
     LatLng droneLocation;
@@ -102,6 +99,8 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
     private GoogleApiClient mGoogleApiClient;
     private SupportMapFragment mapFragment;
     private String system_status = "";
+    String server = Config.dev_server.getValue();
+
 
     @Override
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -634,7 +633,8 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         final SeekBar seekAltitude = (SeekBar) layout.findViewById(R.id.seekBar1);
         final SeekBar seekAirspeed = (SeekBar) layout.findViewById(R.id.seekBar2);
         seekAltitude.setProgress(droneAltitude);
-        seekAirspeed.setProgress(droneAirspeed);
+        seekAirspeed.setProgress((int) droneAirspeed);
+        droneAirspeed /= 2;
         altitude.setText("Set Altitude: " + droneAltitude + " m");
         airspeed.setText("Airspeed: " + droneAirspeed + " m/s");
 
@@ -659,8 +659,8 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
         seekAirspeed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
 
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                airspeed.setText("Airspeed: " + progress + " m/s");
-                droneAirspeed = progress;
+                airspeed.setText("Airspeed: " + progress * 0.5 + " m/s");
+                droneAirspeed = progress * 0.5;
             }
 
             @Override
@@ -767,7 +767,7 @@ public class MapFragment extends Fragment implements OnMapReadyCallback, GoogleA
                 try {
 
                     int droneAltitude = activity.droneAltitude;
-                    int droneAirspeed = activity.droneAirspeed;
+                    double droneAirspeed = activity.droneAirspeed;
 
                     if (command.equals("sendRoute")) {
                         JSONArray jsonArrayLatLong = new JSONArray();
